@@ -1,0 +1,185 @@
+-- 1.
+-- get remaining fishes
+select
+	*
+from
+	fishes
+except
+select
+	f.*
+from
+	fishes f, 
+	transactions t
+where
+	f.id = t.fid
+    
+-- distribution of catched fishes
+select
+	f.weights,
+	100 * count(f.id) / (
+		select
+			count(*)
+		from
+			transactions
+	) as "count (%)"
+from
+	fishes f, 
+	transactions t
+where
+	f.id = t.fid
+group by
+	f.weights
+order by
+	count(f.id)
+
+
+-- 2.
+-- group by gender then weights to see the associated counts
+select
+	c.genders,
+	f.weights,
+	count(*) as cnt
+from
+	fishes f,
+	transactions t,
+	customers c
+where
+	f.id = t.fid and
+	t.cid = c.id
+group by
+	c.genders,
+	f.weights
+order by
+	cnt desc
+
+
+-- 3.
+-- pivot table in SQL with a row total
+-- doing something similar in 2. but different format and with a row total
+with cte as (
+	select
+		c.genders,
+		f.weights,
+		coalesce(count(*), 0) as cnt
+	from
+		fishes f,
+		transactions t,
+		customers c
+	where
+		f.id = t.fid and
+		t.cid = c.id
+	group by
+		c.genders,
+		f.weights
+	order by
+		cnt desc), 
+cte1 as (
+	select
+		*
+	from
+		(select distinct weights from fishes) fw
+	cross join
+		(select distinct genders from customers) cg),
+cte2 as (
+	select
+		c1.weights,
+		c1.genders,
+		coalesce(c.cnt, 0) as cnt
+	from
+		cte1 c1
+	left join
+		cte c
+	on
+		c1.weights = c.weights and c1.genders = c.genders),
+cte2_grp_by_genders as (
+	select
+		genders,
+		sum(cnt) as cnt
+	from
+		cte2
+	group by
+		genders
+)
+
+select
+	c1.genders,
+	c1.cnt "XS",
+	c2.cnt "S",
+	c3.cnt "M",
+	c4.cnt "L",
+	c5.cnt "XL",
+	c6.cnt "XXL",
+	c7.cnt "row total"
+from
+	cte2 c1,
+	cte2 c2,
+	cte2 c3,
+	cte2 c4,
+	cte2 c5,
+	cte2 c6,
+	cte2_grp_by_genders c7
+where
+	c1.weights = 'XS' and
+	c2.weights = 'S' and
+	c3.weights = 'M' and
+	c4.weights = 'L' and
+	c5.weights = 'XL' and
+	c6.weights = 'XXL' and
+	c1.genders = c2.genders and
+	c1.genders = c3.genders and
+	c1.genders = c4.genders and
+	c1.genders = c5.genders and
+	c1.genders = c6.genders and
+	c1.genders = c7.genders
+
+
+-- 4.
+-- big fish / small fish count
+select
+	'big fish',
+	count(id)
+from
+	fishes
+where
+	weights not in ('XS', 'S', 'M')
+union
+select
+	'small fish',
+	count(id)
+from
+	fishes
+where
+	weights in ('XS', 'S', 'M')
+
+
+-- 5.
+-- create KPI of the game: big-to-small ratio
+with big_small_cte as (
+	select
+		'big fish' "type",
+		count(id) as cnt
+	from
+		fishes
+	where
+		weights not in ('XS', 'S', 'M')
+	union
+	select
+		'small fish' "type",
+		count(id) as cnt
+	from
+		fishes
+	where
+		weights in ('XS', 'S', 'M')
+)
+
+select
+	round(
+		(cast(bg.cnt * 100 as float) / 
+		sm.cnt)::numeric, 2)
+	"big-to-small ratio (%)"
+from
+	big_small_cte bg,
+	big_small_cte sm
+where
+	bg.type = 'big fish' and
+	sm.type = 'small fish'
